@@ -19,7 +19,7 @@ st.title("GenAI Chat Assistant (Gemini)")
 llm = ChatGoogleGenerativeAI(
     model="gemini-1.5-flash",
     temperature=0.3,
-    google_api_key=os.getenv("GOOGLE_API_KEY")
+    google_api_key=os.getenv("OPENAI_API_KEY")
 )
 
 
