@@ -15,10 +15,13 @@ st.set_page_config(page_title="GenAI Gemini Chat", page_icon="🤖")
 st.title("GenAI Chat Assistant (Gemini)")
 
 # Initialize Gemini LLM
+
 llm = ChatGoogleGenerativeAI(
     model="gemini-1.5-flash",
-    temperature=0.3
+    temperature=0.3,
+    google_api_key=os.getenv("GOOGLE_API_KEY")
 )
+
 
 # Persistent memory
 if "memory" not in st.session_state:
