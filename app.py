@@ -6,16 +6,16 @@ from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
 
 # -----------------------------
 # Page config
 # -----------------------------
-st.set_page_config(page_title="PDF RAG with Gemini", layout="wide")
-st.title("📄 Chat with PDF – Gemini RAG")
+st.set_page_config(page_title="Chat with PDF – OpenAI RAG", layout="wide")
+st.title("📄 Chat with PDF – OpenAI RAG")
 
 # -----------------------------
-# Load embeddings (LOCAL, cheap, fast)
+# Embeddings (local, free)
 # -----------------------------
 @st.cache_resource
 def load_embeddings():
@@ -26,43 +26,38 @@ def load_embeddings():
 embeddings = load_embeddings()
 
 # -----------------------------
-# Load Gemini LLM
-from langchain_google_genai import ChatGoogleGenerativeAI
-
+# OpenAI LLM (CHEAP + RELIABLE)
+# -----------------------------
 @st.cache_resource
 def load_llm():
-    return ChatGoogleGenerativeAI(
-        model="models/gemini-1.5-flash",
+    return ChatOpenAI(
+        model="gpt-4o-mini",
         temperature=0.2
     )
 
 llm = load_llm()
 
-
-llm = load_llm()
-
 # -----------------------------
-# Build Vector Store
+# Build vector store
 # -----------------------------
 def build_vectorstore(uploaded_file):
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
         tmp.write(uploaded_file.read())
         path = tmp.name
 
-    loader = PyPDFLoader(path)
-    documents = loader.load()
+    docs = PyPDFLoader(path).load()
 
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=500,
         chunk_overlap=100
     )
-    chunks = splitter.split_documents(documents)
+    chunks = splitter.split_documents(docs)
 
     os.remove(path)
     return FAISS.from_documents(chunks, embeddings)
 
 # -----------------------------
-# Answer generation (CORRECT RAG PROMPT)
+# RAG answer generation
 # -----------------------------
 def generate_answer(context, question):
     prompt = f"""
@@ -103,7 +98,6 @@ if uploaded_file:
 
         st.subheader("Answer")
         st.write(answer)
-
         st.subheader("Sources")
         for i, d in enumerate(docs, 1):
             st.write(f"Source {i}")
