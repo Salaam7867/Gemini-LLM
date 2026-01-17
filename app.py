@@ -27,13 +27,17 @@ embeddings = load_embeddings()
 
 # -----------------------------
 # Load Gemini LLM
-# -----------------------------
+from langchain_google_genai import ChatGoogleGenerativeAI
+
 @st.cache_resource
 def load_llm():
     return ChatGoogleGenerativeAI(
-        model="gemini-1.5-flash",
+        model="models/gemini-1.5-flash",
         temperature=0.2
     )
+
+llm = load_llm()
+
 
 llm = load_llm()
 
