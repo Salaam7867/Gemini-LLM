@@ -1,89 +1,106 @@
-import os
-from dotenv import load_dotenv
 import streamlit as st
+import tempfile
+import os
+
+from langchain_community.document_loaders import PyPDFLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.vectorstores import FAISS
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.memory import ConversationBufferMemory
-from langchain.chains import ConversationChain
-from langchain.prompts import PromptTemplate
 
-# Load API key
-load_dotenv()
+# -----------------------------
+# Page config
+# -----------------------------
+st.set_page_config(page_title="PDF RAG with Gemini", layout="wide")
+st.title("📄 Chat with PDF – Gemini RAG")
 
-# Streamlit setup
-st.set_page_config(page_title="GenAI Gemini Chat", page_icon="🤖")
-st.title("GenAI Chat Assistant (Gemini)")
-
-# Initialize Gemini LLM (cached to avoid recreation on every rerun)
+# -----------------------------
+# Load embeddings (LOCAL, cheap, fast)
+# -----------------------------
 @st.cache_resource
-def get_llm():
-    return ChatGoogleGenerativeAI(
-        model="gemini-1.5-flash",
-        temperature=0.3,
-        google_api_key=os.getenv("GEMINI_API_KEY")
+def load_embeddings():
+    return HuggingFaceEmbeddings(
+        model_name="sentence-transformers/all-MiniLM-L6-v2"
     )
 
-llm = get_llm()
+embeddings = load_embeddings()
 
-# Persistent memory
-if "memory" not in st.session_state:
-    st.session_state.memory = ConversationBufferMemory()
+# -----------------------------
+# Load Gemini LLM
+# -----------------------------
+@st.cache_resource
+def load_llm():
+    return ChatGoogleGenerativeAI(
+        model="gemini-1.5-flash",
+        temperature=0.2
+    )
 
-# Store chat messages for display
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+llm = load_llm()
 
-# Prompt template
-prompt = PromptTemplate(
-    input_variables=["history", "input"],
-    template="""You are a helpful AI assistant.
-Answer clearly and concisely.
+# -----------------------------
+# Build Vector Store
+# -----------------------------
+def build_vectorstore(uploaded_file):
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+        tmp.write(uploaded_file.read())
+        path = tmp.name
 
-Conversation history:
-{history}
+    loader = PyPDFLoader(path)
+    documents = loader.load()
 
-User: {input}
-Assistant:"""
-)
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=500,
+        chunk_overlap=100
+    )
+    chunks = splitter.split_documents(documents)
 
-# Conversation chain
-conversation = ConversationChain(
-    llm=llm,
-    memory=st.session_state.memory,
-    prompt=prompt
-)
+    os.remove(path)
+    return FAISS.from_documents(chunks, embeddings)
 
-# Display chat history
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.write(message["content"])
+# -----------------------------
+# Answer generation (CORRECT RAG PROMPT)
+# -----------------------------
+def generate_answer(context, question):
+    prompt = f"""
+You are an AI assistant answering questions strictly using the provided document context.
 
-# User input using chat_input (better than text_input for chat apps)
-if user_input := st.chat_input("Type your message here..."):
-    # Display user message
-    with st.chat_message("user"):
-        st.write(user_input)
-    
-    # Add user message to history
-    st.session_state.messages.append({"role": "user", "content": user_input})
-    
-    # Generate response
-    with st.chat_message("assistant"):
-        with st.spinner("Thinking..."):
-            response = conversation.predict(input=user_input)
-            st.write(response)
-    
-    # Add assistant response to history
-    st.session_state.messages.append({"role": "assistant", "content": response})
+Rules:
+- Use ONLY the context below
+- Do NOT add external knowledge
+- If the answer is not present, say exactly: Not found in document
 
-# Add a clear chat button in the sidebar
-with st.sidebar:
-    st.header("Options")
-    if st.button("Clear Chat History"):
-        st.session_state.messages = []
-        st.session_state.memory.clear()
-        st.rerun()
-    
-    st.markdown("---")
-    st.markdown("### About")
-    st.markdown("This is a chat interface powered by Google's Gemini AI model using LangChain.")
-    st.markdown("Ask me anything!")
+Context:
+{context}
+
+Question:
+{question}
+
+Answer:
+"""
+    response = llm.invoke(prompt)
+    return response.content.strip()
+
+# -----------------------------
+# UI
+# -----------------------------
+uploaded_file = st.file_uploader("Upload a PDF", type="pdf")
+
+if uploaded_file:
+    with st.spinner("Indexing document..."):
+        vectorstore = build_vectorstore(uploaded_file)
+
+    question = st.text_input("Ask a question from the document")
+
+    if question:
+        docs = vectorstore.similarity_search(question, k=4)
+        context = "\n\n".join(d.page_content for d in docs)
+
+        answer = generate_answer(context, question)
+
+        st.subheader("Answer")
+        st.write(answer)
+
+        st.subheader("Sources")
+        for i, d in enumerate(docs, 1):
+            st.write(f"Source {i}")
+            st.write(d.page_content[:300] + "...")

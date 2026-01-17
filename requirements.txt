@@ -1,4 +1,9 @@
 streamlit
-langchain==0.0.352
-langchain-google-genai==0.0.8
-python-dotenv
+langchain
+langchain-community
+langchain-google-genai
+langchain-text-splitters
+langchain-huggingface
+faiss-cpu
+sentence-transformers
+pypdf
